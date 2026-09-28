@@ -1,0 +1,12 @@
+# 忽略大体积原始手写照片目录 (防止产生几百兆上传导致网络中断)
+英语照片/
+英语笔记/
+*.jpg
+*.jpeg
+
+# 排除临时文件与 Obsidian 个人设置
+__pycache__/
+*.pyc
+*.pyo
+.system_generated/
+.obsidian/

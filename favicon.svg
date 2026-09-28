@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="40%" stop-color="#3730a3" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+
+    <!-- Front Card Gradient -->
+    <linearGradient id="frontCardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8fafc" />
+    </linearGradient>
+
+    <!-- Star Gradient -->
+    <linearGradient id="starGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+
+    <!-- Typography Gradient -->
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#312e81" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+
+    <!-- Drop Shadow Filter -->
+    <filter id="cardShadow" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.38" />
+    </filter>
+  </defs>
+
+  <!-- App Squircle Base -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)" />
+
+  <!-- Soft Top Glow Sheen -->
+  <ellipse cx="140" cy="90" rx="220" ry="170" fill="#ffffff" fill-opacity="0.12" />
+
+  <!-- Tilted Background Card -->
+  <rect x="100" y="85" width="312" height="345" rx="34" 
+        transform="rotate(-8 256 256)" 
+        fill="#ffffff" fill-opacity="0.18" 
+        stroke="#ffffff" stroke-opacity="0.35" stroke-width="2.5" />
+
+  <!-- Main Front Active Flashcard with Shadow -->
+  <g filter="url(#cardShadow)">
+    <rect x="100" y="95" width="312" height="345" rx="34" fill="url(#frontCardGrad)" stroke="#e2e8f0" stroke-width="2" />
+
+    <!-- Top Pill Badge: 考研 -->
+    <rect x="130" y="125" width="84" height="30" rx="15" fill="#eef2ff" />
+    <text x="172" y="146" font-family="'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif" 
+          font-size="14" font-weight="700" fill="#4f46e5" text-anchor="middle" dominant-baseline="middle">考研</text>
+
+    <!-- Geometric 5-pointed Golden Star (★ 核心考点) -->
+    <polygon points="375,123 379.7,133.5 391.3,134.7 382.6,142.5 385.1,154 375,148.1 364.9,154 367.4,142.5 358.7,134.7 370.3,133.5" 
+             fill="url(#starGrad)" stroke="#b45309" stroke-width="1.2" />
+
+    <!-- Central EN Typography -->
+    <text x="256" y="252" font-family="'Arial Black', Impact, sans-serif" 
+          font-size="88" font-weight="900" fill="url(#textGrad)" text-anchor="middle">EN</text>
+
+    <!-- Flashcard Divider Line -->
+    <line x1="140" y1="290" x2="372" y2="290" stroke="#e0e7ff" stroke-width="2.5" stroke-linecap="round" />
+
+    <!-- Accent Lines (Note highlights & sample sentences) -->
+    <rect x="145" y="312" width="42" height="10" rx="5" fill="#f59e0b" />
+    <rect x="195" y="312" width="172" height="10" rx="5" fill="#4f46e5" />
+    <rect x="145" y="335" width="222" height="8" rx="4" fill="#94a3b8" fill-opacity="0.75" />
+    <rect x="145" y="353" width="150" height="7" rx="3.5" fill="#cbd5e1" fill-opacity="0.8" />
+
+    <!-- Navigation dots -->
+    <circle cx="230" cy="392" r="4.5" fill="#4f46e5" />
+    <circle cx="252" cy="392" r="4.5" fill="#cbd5e1" />
+    <circle cx="274" cy="392" r="4.5" fill="#cbd5e1" />
+  </g>
+</svg>
