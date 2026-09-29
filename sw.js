@@ -1,5 +1,5 @@
 // 考研英语刷题卡 Service Worker (PWA 离线复习支持)
-const CACHE_VERSION = 'v1.1.2';
+const CACHE_VERSION = 'v1.2.0';
 const CACHE_NAME = `kaoyan-cards-pwa-${CACHE_VERSION}`;
 
 // 核心离线预缓存资源清单

@@ -202,6 +202,11 @@ def main():
         assert r5.returncode == 0, f"test_comprehensive_features.js 失败:\n{r5.stdout}\n{r5.stderr}"
         log("✓ test_comprehensive_features.js (核心释义/考点讲解双板块与原句翻译测试) 通过")
 
+    if shutil.which("node") and os.path.exists("test_plan_and_quota.js"):
+        r6 = subprocess.run(["node", "test_plan_and_quota.js"], capture_output=True, text=True, encoding='utf-8')
+        assert r6.returncode == 0, f"test_plan_and_quota.js 失败:\n{r6.stdout}\n{r6.stderr}"
+        log("✓ test_plan_and_quota.js (多套复习计划、每日定量推送与断点续学测试) 通过")
+
     # 8. Git 本地与云端同步
     if not args.no_git:
         log("📦 检查 Git 版本控制状态...")
