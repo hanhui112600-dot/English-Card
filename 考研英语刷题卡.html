@@ -1149,7 +1149,7 @@
     </div>
 
     <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text-muted);" id="appVersionInfo">
-      题库版本：v1.2.0 (397词) · 支持离线PWA
+      题库版本：v1.2.1 (397词) · 支持离线PWA
     </div>
   </div>
 
@@ -1183,6 +1183,14 @@
       <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.4;">
         根据你的考研备战节奏选择定量方案，系统动态测算全量通关日期：
       </p>
+
+      <div style="margin-bottom: 12px; padding: 10px 12px; background: var(--bg-hover, rgba(0,0,0,0.03)); border: 1px solid var(--border); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <label for="planStartDateInput" style="font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+          <span>📅 计划开始日期</span>
+        </label>
+        <input type="date" id="planStartDateInput" style="height: 36px; border-radius: 8px; border: 1px solid var(--border); padding: 0 10px; font-size: 13px; background: var(--card-bg); color: var(--text-main); outline: none;" onchange="onPlanStartDateChange()">
+      </div>
+
       <div class="plan-options-list" id="planOptionsList" style="display: flex; flex-direction: column; gap: 10px;">
         <!-- 4 种方案动态渲染 -->
       </div>
@@ -1200,7 +1208,14 @@
         </div>
         <div id="customDeadlineHint" style="font-size: 11.5px; color: var(--text-muted); margin-top: 6px;">💡 可直接指定每日背词数，或选择考研倒计时截止日自动推算。</div>
       </div>
+
+      <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between;" id="planModalFooterStats">
+        <span id="planModalRemainingText">剩余待攻克：397 词</span>
+        <span id="planModalFooterETD">预计 10月6日 全量通关</span>
       </div>
+      <button class="finish-btn" onclick="saveSelectedPlan()" style="margin-top: 14px;">确认保存计划</button>
+    </div>
+  </div>
 
   <!-- 全部完成弹窗 -->
   <div class="finish-modal" id="finishModal">
@@ -1214,7 +1229,7 @@
 
   <script>
     // 考研真题知识库（按年份与篇章划分）
-                                                                                                                const ALL_CARDS = [
+                                                                                                                    const ALL_CARDS = [
       {
             "id": "2007-T1-01",
             "year": 2007,
@@ -5983,7 +5998,7 @@
 
 
     // 当前网页内置版本标识 (由 publish.py 自动同步维护)
-    const APP_VERSION = '1.2.0';
+    const APP_VERSION = '1.2.1';
 
     // 严谨语义化版本比较工具 (v1.0.2 vs v1.0.1)
     function compareVersions(v1, v2) {
@@ -6202,7 +6217,8 @@
       plan: {
         mode: 'intensive', // 'steady' (35), 'intensive' (60), 'yearly', 'custom'
         customDailyTarget: 50,
-        customDeadline: ''
+        customDeadline: '',
+        startDate: ''
       },
 
       // 每日定量推送与打卡连续记录
@@ -6224,8 +6240,24 @@
       return `${year}-${month}-${day}`;
     }
 
+    // 判断计划是否设定为未来启动
+    function isFuturePlanStartDate(todayStr) {
+      if (!state.plan || !state.plan.startDate) return false;
+      const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
+      const start = new Date(state.plan.startDate + 'T00:00:00');
+      return start.getTime() > today.getTime();
+    }
+
+    // 获取距计划正式启动的倒计时天数
+    function getDaysUntilPlanStart(todayStr) {
+      if (!state.plan || !state.plan.startDate) return 0;
+      const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
+      const start = new Date(state.plan.startDate + 'T00:00:00');
+      return Math.ceil((start.getTime() - today.getTime()) / 86400000);
+    }
+
     // 获取当前计划的每日定量目标
-    function getDailyTarget(mode) {
+    function getDailyTarget(mode, todayStr) {
       const m = mode || (state.plan && state.plan.mode) || 'intensive';
       if (m === 'steady') return 35;
       if (m === 'intensive') return 60;
@@ -6235,9 +6267,12 @@
       }
       if (m === 'custom') {
         if (state.plan && state.plan.customDeadline) {
-          const today = new Date(getLocalDateString() + 'T00:00:00');
+          const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
+          const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : (todayStr || getLocalDateString());
+          const startDate = new Date(startStr + 'T00:00:00');
+          const baseDate = startDate > today ? startDate : today;
           const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-          const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+          const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
           if (diffDays > 0) {
             const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
             return Math.max(Math.ceil(unmastered / diffDays), 1);
@@ -6250,25 +6285,31 @@
     }
 
     // 动态测算通关日期 (ETD: Estimated Completion Date)
-    function getETDInfo(targetOverride) {
+    function getETDInfo(targetOverride, todayStr) {
       const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
       if (unmastered === 0) {
         return { unmastered: 0, daysRemaining: 0, etdStr: '已全量通关 🎉' };
       }
+      const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
+      const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : (todayStr || getLocalDateString());
+      const startDate = new Date(startStr + 'T00:00:00');
+      const baseDate = startDate > today ? startDate : today;
+
       if (state.plan && state.plan.mode === 'custom' && state.plan.customDeadline) {
-        const today = new Date(getLocalDateString() + 'T00:00:00');
         const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-        const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+        const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
         if (diffDays > 0) {
           const finishDate = targetDate;
           const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
-          return { unmastered, daysRemaining: diffDays, etdStr };
+          const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+          return { unmastered, daysRemaining, etdStr };
         }
       }
-      const dailyTarget = targetOverride || getDailyTarget();
-      const daysRemaining = Math.ceil(unmastered / Math.max(dailyTarget, 1));
-      const finishDate = new Date(Date.now() + daysRemaining * 86400000);
+      const dailyTarget = targetOverride || getDailyTarget(undefined, todayStr);
+      const studyDays = Math.ceil(unmastered / Math.max(dailyTarget, 1));
+      const finishDate = new Date(baseDate.getTime() + studyDays * 86400000);
       const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
+      const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / 86400000);
       return { unmastered, daysRemaining, etdStr };
     }
 
@@ -6348,12 +6389,14 @@
       }
       state.daily.lastStudyDate = todayStr;
 
-      // 达成今日定量目标检测
-      const target = getDailyTarget();
-      if (state.daily.todayLearnedIds.length >= target && !state.daily.goalCelebrated) {
-        state.daily.goalCelebrated = true;
-        recordDailyCheckin();
-        openDailyGoalModal();
+      // 达成今日定量目标检测 (仅在计划已正式启动时检测；未来启动前为自由预习)
+      if (!isFuturePlanStartDate(todayStr)) {
+        const target = getDailyTarget();
+        if (state.daily.todayLearnedIds.length >= target && !state.daily.goalCelebrated) {
+          state.daily.goalCelebrated = true;
+          recordDailyCheckin();
+          openDailyGoalModal();
+        }
       }
     }
 
@@ -6362,27 +6405,54 @@
       const pill = document.getElementById('headerPlanPill');
       if (!pill) return;
 
-      const todayCount = state.daily && state.daily.todayLearnedIds ? state.daily.todayLearnedIds.length : 0;
+      const todayStr = getLocalDateString();
+      const isFuture = isFuturePlanStartDate(todayStr);
+
+      const drawerPlanName = document.getElementById('drawerPlanName');
+      const drawerPlanDesc = document.getElementById('drawerPlanDesc');
+      const curPlan = PLAN_PRESETS[state.plan.mode] || PLAN_PRESETS.intensive;
       const target = getDailyTarget();
       const streak = state.daily ? state.daily.streakDays : 1;
       const { unmastered, etdStr } = getETDInfo();
-
       const etdPart = unmastered === 0 ? '预计 已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
-      pill.textContent = `🎯 今日计划: ${todayCount} / ${target} 词 | 🔥 连续打卡 ${streak} 天 | ${etdPart}`;
 
-      // 同步更新侧边抽屉内的计划概览
-      const drawerPlanName = document.getElementById('drawerPlanName');
-      const drawerPlanDesc = document.getElementById('drawerPlanDesc');
-      if (drawerPlanName && drawerPlanDesc) {
-        const curPlan = PLAN_PRESETS[state.plan.mode] || PLAN_PRESETS.intensive;
-        let targetLabel = `${target}词/天`;
-        if (state.plan.mode === 'yearly') {
-          targetLabel = `${target}词(全年)`;
-        } else if (state.plan.mode === 'custom' && state.plan.customDeadline) {
-          targetLabel = `${target}词/天 · 冲刺至${state.plan.customDeadline}`;
+      if (isFuture) {
+        const startObj = new Date(state.plan.startDate + 'T00:00:00');
+        const diffDays = getDaysUntilPlanStart(todayStr);
+        pill.textContent = `🎯 计划将于 ${startObj.getMonth() + 1}月${startObj.getDate()}日 正式启动 (还剩 ${diffDays} 天) · 当前可自由预习`;
+
+        if (drawerPlanName && drawerPlanDesc) {
+          let targetLabel = `${target}词/天`;
+          if (state.plan.mode === 'yearly') {
+            targetLabel = `${target}词(全年)`;
+          } else if (state.plan.mode === 'custom' && state.plan.customDeadline) {
+            targetLabel = `${target}词/天 · 冲刺至${state.plan.customDeadline}`;
+          }
+          drawerPlanName.textContent = `${curPlan.icon} ${curPlan.name} (${targetLabel})`;
+          drawerPlanDesc.textContent = `计划将于 ${startObj.getMonth() + 1}月${startObj.getDate()}日 启动 (还剩 ${diffDays} 天) · 当前自由预习`;
         }
-        drawerPlanName.textContent = `${curPlan.icon} ${curPlan.name} (${targetLabel})`;
-        drawerPlanDesc.textContent = `${etdPart} · 连续打卡 ${streak} 天`;
+      } else {
+        const todayCount = state.daily && state.daily.todayLearnedIds ? state.daily.todayLearnedIds.length : 0;
+        pill.textContent = `🎯 今日计划: ${todayCount} / ${target} 词 | 🔥 连续打卡 ${streak} 天 | ${etdPart}`;
+
+        if (drawerPlanName && drawerPlanDesc) {
+          let targetLabel = `${target}词/天`;
+          if (state.plan.mode === 'yearly') {
+            targetLabel = `${target}词(全年)`;
+          } else if (state.plan.mode === 'custom' && state.plan.customDeadline) {
+            targetLabel = `${target}词/天 · 冲刺至${state.plan.customDeadline}`;
+          }
+          drawerPlanName.textContent = `${curPlan.icon} ${curPlan.name} (${targetLabel})`;
+
+          let daysInfo = `连续打卡 ${streak} 天`;
+          if (state.plan && state.plan.startDate) {
+            const startObj = new Date(state.plan.startDate + 'T00:00:00');
+            const todayObj = new Date(todayStr + 'T00:00:00');
+            const daysSinceStart = Math.max(Math.floor((todayObj.getTime() - startObj.getTime()) / 86400000) + 1, 1);
+            daysInfo = `已启动第 ${daysSinceStart} 天 · 连续打卡 ${streak} 天`;
+          }
+          drawerPlanDesc.textContent = `${etdPart} · ${daysInfo}`;
+        }
       }
     }
 
@@ -6423,6 +6493,12 @@
       const modal = document.getElementById('planModal');
       if (!modal) return;
       tempSelectedPlanMode = state.plan ? state.plan.mode : 'intensive';
+
+      const startDateInput = document.getElementById('planStartDateInput');
+      if (startDateInput) {
+        startDateInput.value = (state.plan && state.plan.startDate) ? state.plan.startDate : getLocalDateString();
+      }
+
       const customInput = document.getElementById('customTargetInput');
       if (customInput && state.plan && state.plan.customDailyTarget) {
         customInput.value = state.plan.customDailyTarget;
@@ -6441,7 +6517,8 @@
 
     function closePlanModal() {
       const modal = document.getElementById('planModal');
-      if (modal) modal.style.display = 'none';
+      if (!modal) return;
+      modal.style.display = 'none';
     }
 
     function selectPlanMode(mode) {
@@ -6452,6 +6529,21 @@
       }
       renderPlanOptionsList();
       updatePlanModalFooter();
+    }
+
+    function onPlanStartDateChange() {
+      const startDateInput = document.getElementById('planStartDateInput');
+      if (!startDateInput) return;
+      if (!startDateInput.value) {
+        startDateInput.value = getLocalDateString();
+      }
+      const deadlineInput = document.getElementById('customDeadlineInput');
+      if (deadlineInput && deadlineInput.value) {
+        onCustomDeadlineChange();
+      } else {
+        renderPlanOptionsList();
+        updatePlanModalFooter();
+      }
     }
 
     function onCustomTargetChange() {
@@ -6467,6 +6559,7 @@
       const deadlineInput = document.getElementById('customDeadlineInput');
       const targetInput = document.getElementById('customTargetInput');
       const hint = document.getElementById('customDeadlineHint');
+      const startDateInput = document.getElementById('planStartDateInput');
       if (!deadlineInput || !targetInput) return;
 
       const deadlineVal = deadlineInput.value;
@@ -6478,17 +6571,20 @@
       }
 
       const today = new Date(getLocalDateString() + 'T00:00:00');
+      const startStr = (startDateInput && startDateInput.value) ? startDateInput.value : ((state.plan && state.plan.startDate) || getLocalDateString());
+      const startDate = new Date(startStr + 'T00:00:00');
+      const baseDate = startDate > today ? startDate : today;
       const targetDate = new Date(deadlineVal + 'T00:00:00');
-      const diffDays = Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+      const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
       const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
 
       if (diffDays <= 0) {
-        if (hint) hint.innerHTML = '⚠️ <span style="color:#ef4444;">截止日期不能早于或等于今天，已恢复默认定量。</span>';
+        if (hint) hint.innerHTML = '⚠️ <span style="color:#ef4444;">截止日期必须晚于计划开始日期与今天，已恢复默认定量。</span>';
         deadlineInput.value = '';
       } else {
         const calculatedTarget = Math.max(Math.ceil(unmastered / diffDays), 1);
         targetInput.value = calculatedTarget;
-        if (hint) hint.innerHTML = `🎯 距目标日尚余 <strong>${diffDays}</strong> 天，为全量通关建议每日攻克 <strong>${calculatedTarget}</strong> 词。`;
+        if (hint) hint.innerHTML = `🎯 距目标日尚余 <strong>${diffDays}</strong> 天备考期，为全量通关建议每日攻克 <strong>${calculatedTarget}</strong> 词。`;
       }
       updatePlanModalFooter();
       renderPlanOptionsList();
@@ -6500,6 +6596,9 @@
 
       const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
       const modes = ['steady', 'intensive', 'yearly', 'custom'];
+      const todayStr = getLocalDateString();
+      const startDateInput = document.getElementById('planStartDateInput');
+      const tempStartDate = (startDateInput && startDateInput.value) ? startDateInput.value : ((state.plan && state.plan.startDate) || todayStr);
 
       let html = '';
       modes.forEach(m => {
@@ -6528,19 +6627,24 @@
         if (unmastered === 0) {
           etdText = '已全量通关 🎉';
         } else {
+          const today = new Date(todayStr + 'T00:00:00');
+          const startDate = new Date(tempStartDate + 'T00:00:00');
+          const baseDate = startDate > today ? startDate : today;
+
           let finishDate;
           let days;
           if (m === 'custom') {
             const deadlineInput = document.getElementById('customDeadlineInput');
             const dVal = deadlineInput ? deadlineInput.value : (state.plan && state.plan.customDeadline);
-            if (dVal && new Date(dVal + 'T00:00:00') > new Date(getLocalDateString() + 'T00:00:00')) {
+            if (dVal && new Date(dVal + 'T00:00:00') > baseDate) {
               finishDate = new Date(dVal + 'T00:00:00');
-              days = Math.ceil((finishDate.getTime() - new Date(getLocalDateString() + 'T00:00:00').getTime()) / 86400000);
+              days = Math.ceil((finishDate.getTime() - today.getTime()) / 86400000);
             }
           }
           if (!finishDate) {
-            days = Math.ceil(unmastered / Math.max(target, 1));
-            finishDate = new Date(Date.now() + days * 86400000);
+            const studyDays = Math.ceil(unmastered / Math.max(target, 1));
+            finishDate = new Date(baseDate.getTime() + studyDays * 86400000);
+            days = Math.ceil((finishDate.getTime() - today.getTime()) / 86400000);
           }
           etdText = `预计 ${finishDate.getMonth() + 1}月${finishDate.getDate()}日 全量通关 (${days}天)`;
         }
@@ -6564,6 +6668,10 @@
 
     function updatePlanModalFooter() {
       const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
+      const todayStr = getLocalDateString();
+      const startDateInput = document.getElementById('planStartDateInput');
+      const tempStartDate = (startDateInput && startDateInput.value) ? startDateInput.value : ((state.plan && state.plan.startDate) || todayStr);
+
       let target = getDailyTarget(tempSelectedPlanMode);
       if (tempSelectedPlanMode === 'custom') {
         const inputEl = document.getElementById('customTargetInput');
@@ -6578,17 +6686,21 @@
         if (unmastered === 0) {
           footerETD.textContent = '已全量通关 🎉';
         } else {
+          const today = new Date(todayStr + 'T00:00:00');
+          const startDate = new Date(tempStartDate + 'T00:00:00');
+          const baseDate = startDate > today ? startDate : today;
+
           let finishDate;
           if (tempSelectedPlanMode === 'custom') {
             const deadlineInput = document.getElementById('customDeadlineInput');
             const dVal = deadlineInput ? deadlineInput.value : (state.plan && state.plan.customDeadline);
-            if (dVal && new Date(dVal + 'T00:00:00') > new Date(getLocalDateString() + 'T00:00:00')) {
+            if (dVal && new Date(dVal + 'T00:00:00') > baseDate) {
               finishDate = new Date(dVal + 'T00:00:00');
             }
           }
           if (!finishDate) {
-            const days = Math.ceil(unmastered / Math.max(target, 1));
-            finishDate = new Date(Date.now() + days * 86400000);
+            const studyDays = Math.ceil(unmastered / Math.max(target, 1));
+            finishDate = new Date(baseDate.getTime() + studyDays * 86400000);
           }
           footerETD.textContent = `预计 ${finishDate.getMonth() + 1}月${finishDate.getDate()}日 全量通关`;
         }
@@ -6597,6 +6709,14 @@
 
     function saveSelectedPlan() {
       state.plan.mode = tempSelectedPlanMode;
+
+      const startDateInput = document.getElementById('planStartDateInput');
+      if (startDateInput && startDateInput.value) {
+        state.plan.startDate = startDateInput.value;
+      } else if (!state.plan.startDate) {
+        state.plan.startDate = getLocalDateString();
+      }
+
       if (tempSelectedPlanMode === 'custom') {
         const inputEl = document.getElementById('customTargetInput');
         if (inputEl) {
@@ -6612,7 +6732,13 @@
       const curPlan = PLAN_PRESETS[state.plan.mode] || PLAN_PRESETS.intensive;
       const { etdStr, unmastered } = getETDInfo();
       const etdPart = unmastered === 0 ? '已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
-      showToast(`🎯 已切换为「${curPlan.name}」！${etdPart}`, 3000);
+      if (isFuturePlanStartDate()) {
+        const daysUntil = getDaysUntilPlanStart();
+        const startObj = new Date(state.plan.startDate + 'T00:00:00');
+        showToast(`🎯 已切换为「${curPlan.name}」！将于 ${startObj.getMonth() + 1}月${startObj.getDate()}日 启动 (还剩 ${daysUntil} 天) · ${etdPart}`, 3500);
+      } else {
+        showToast(`🎯 已切换为「${curPlan.name}」！${etdPart}`, 3000);
+      }
     }
 
     // 检查当前年份是否已 100% 掌握并自动晋级到下一年
@@ -6658,7 +6784,7 @@
           if (parsed.breakpointCardId) state.breakpointCardId = parsed.breakpointCardId;
 
           if (parsed.plan) {
-            state.plan = Object.assign({ mode: 'intensive', customDailyTarget: 50, customDeadline: '' }, parsed.plan);
+            state.plan = Object.assign({ mode: 'intensive', customDailyTarget: 50, customDeadline: '', startDate: '' }, parsed.plan);
           }
           if (parsed.daily) {
             state.daily = Object.assign({
