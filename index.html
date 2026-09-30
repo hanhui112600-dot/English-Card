@@ -1149,7 +1149,7 @@
     </div>
 
     <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); text-align: center; font-size: 11px; color: var(--text-muted);" id="appVersionInfo">
-      题库版本：v1.2.1 (397词) · 支持离线PWA
+      题库版本：v1.2.2 (397词) · 支持离线PWA
     </div>
   </div>
 
@@ -1229,7 +1229,7 @@
 
   <script>
     // 考研真题知识库（按年份与篇章划分）
-                                                                                                                    const ALL_CARDS = [
+                                                                                                                        const ALL_CARDS = [
       {
             "id": "2007-T1-01",
             "year": 2007,
@@ -5998,7 +5998,7 @@
 
 
     // 当前网页内置版本标识 (由 publish.py 自动同步维护)
-    const APP_VERSION = '1.2.1';
+    const APP_VERSION = '1.2.2';
 
     // 严谨语义化版本比较工具 (v1.0.2 vs v1.0.1)
     function compareVersions(v1, v2) {
@@ -6245,6 +6245,7 @@
       if (!state.plan || !state.plan.startDate) return false;
       const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
       const start = new Date(state.plan.startDate + 'T00:00:00');
+      if (isNaN(start.getTime()) || isNaN(today.getTime())) return false;
       return start.getTime() > today.getTime();
     }
 
@@ -6253,7 +6254,8 @@
       if (!state.plan || !state.plan.startDate) return 0;
       const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
       const start = new Date(state.plan.startDate + 'T00:00:00');
-      return Math.ceil((start.getTime() - today.getTime()) / 86400000);
+      if (isNaN(start.getTime()) || isNaN(today.getTime())) return 0;
+      return Math.max(Math.ceil((start.getTime() - today.getTime()) / 86400000), 0);
     }
 
     // 获取当前计划的每日定量目标
@@ -6270,12 +6272,14 @@
           const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
           const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : (todayStr || getLocalDateString());
           const startDate = new Date(startStr + 'T00:00:00');
-          const baseDate = startDate > today ? startDate : today;
+          const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
           const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-          const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
-          if (diffDays > 0) {
-            const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
-            return Math.max(Math.ceil(unmastered / diffDays), 1);
+          if (!isNaN(targetDate.getTime())) {
+            const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
+            if (diffDays > 0) {
+              const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
+              return Math.max(Math.ceil(unmastered / diffDays), 1);
+            }
           }
         }
         const val = state.plan && state.plan.customDailyTarget;
@@ -6293,16 +6297,18 @@
       const today = new Date((todayStr || getLocalDateString()) + 'T00:00:00');
       const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : (todayStr || getLocalDateString());
       const startDate = new Date(startStr + 'T00:00:00');
-      const baseDate = startDate > today ? startDate : today;
+      const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
 
       if (state.plan && state.plan.mode === 'custom' && state.plan.customDeadline) {
         const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-        const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
-        if (diffDays > 0) {
-          const finishDate = targetDate;
-          const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
-          const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-          return { unmastered, daysRemaining, etdStr };
+        if (!isNaN(targetDate.getTime())) {
+          const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
+          if (diffDays > 0) {
+            const finishDate = targetDate;
+            const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
+            const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+            return { unmastered, daysRemaining, etdStr };
+          }
         }
       }
       const dailyTarget = targetOverride || getDailyTarget(undefined, todayStr);
@@ -6361,7 +6367,8 @@
       if (!state.daily) checkCalendarDayTransition();
 
       if (state.daily.lastCheckinDate !== todayStr) {
-        const yesterday = new Date();
+        const currDate = new Date(todayStr + 'T00:00:00');
+        const yesterday = new Date(currDate);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = getLocalDateString(yesterday);
 
@@ -6414,7 +6421,7 @@
       const target = getDailyTarget();
       const streak = state.daily ? state.daily.streakDays : 1;
       const { unmastered, etdStr } = getETDInfo();
-      const etdPart = unmastered === 0 ? '预计 已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
+      const etdPart = unmastered === 0 ? '已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
 
       if (isFuture) {
         const startObj = new Date(state.plan.startDate + 'T00:00:00');
@@ -6433,7 +6440,18 @@
         }
       } else {
         const todayCount = state.daily && state.daily.todayLearnedIds ? state.daily.todayLearnedIds.length : 0;
-        pill.textContent = `🎯 今日计划: ${todayCount} / ${target} 词 | 🔥 连续打卡 ${streak} 天 | ${etdPart}`;
+        let daysInfo = `连续打卡 ${streak} 天`;
+        let startDayText = '';
+        if (state.plan && state.plan.startDate) {
+          const startObj = new Date(state.plan.startDate + 'T00:00:00');
+          const todayObj = new Date(todayStr + 'T00:00:00');
+          if (!isNaN(startObj.getTime()) && !isNaN(todayObj.getTime())) {
+            const daysSinceStart = Math.max(Math.floor((todayObj.getTime() - startObj.getTime()) / 86400000) + 1, 1);
+            startDayText = `启动第 ${daysSinceStart} 天 · `;
+            daysInfo = `已启动第 ${daysSinceStart} 天 · 连续打卡 ${streak} 天`;
+          }
+        }
+        pill.textContent = `🎯 今日计划: ${todayCount} / ${target} 词 | ${startDayText}🔥 连续打卡 ${streak} 天 | ${etdPart}`;
 
         if (drawerPlanName && drawerPlanDesc) {
           let targetLabel = `${target}词/天`;
@@ -6443,14 +6461,6 @@
             targetLabel = `${target}词/天 · 冲刺至${state.plan.customDeadline}`;
           }
           drawerPlanName.textContent = `${curPlan.icon} ${curPlan.name} (${targetLabel})`;
-
-          let daysInfo = `连续打卡 ${streak} 天`;
-          if (state.plan && state.plan.startDate) {
-            const startObj = new Date(state.plan.startDate + 'T00:00:00');
-            const todayObj = new Date(todayStr + 'T00:00:00');
-            const daysSinceStart = Math.max(Math.floor((todayObj.getTime() - startObj.getTime()) / 86400000) + 1, 1);
-            daysInfo = `已启动第 ${daysSinceStart} 天 · 连续打卡 ${streak} 天`;
-          }
           drawerPlanDesc.textContent = `${etdPart} · ${daysInfo}`;
         }
       }
@@ -6494,23 +6504,36 @@
       if (!modal) return;
       tempSelectedPlanMode = state.plan ? state.plan.mode : 'intensive';
 
+      const todayStr = getLocalDateString();
       const startDateInput = document.getElementById('planStartDateInput');
       if (startDateInput) {
-        startDateInput.value = (state.plan && state.plan.startDate) ? state.plan.startDate : getLocalDateString();
+        startDateInput.value = (state.plan && state.plan.startDate) ? state.plan.startDate : todayStr;
       }
 
       const customInput = document.getElementById('customTargetInput');
-      if (customInput && state.plan && state.plan.customDailyTarget) {
-        customInput.value = state.plan.customDailyTarget;
+      if (customInput) {
+        customInput.value = (state.plan && state.plan.customDailyTarget) ? state.plan.customDailyTarget : 50;
       }
       const customDeadlineInput = document.getElementById('customDeadlineInput');
-      if (customDeadlineInput && state.plan && state.plan.customDeadline) {
-        customDeadlineInput.value = state.plan.customDeadline;
+      if (customDeadlineInput) {
+        customDeadlineInput.value = (state.plan && state.plan.customDeadline) ? state.plan.customDeadline : '';
+        const curStart = (startDateInput && startDateInput.value) ? startDateInput.value : todayStr;
+        customDeadlineInput.min = curStart > todayStr ? curStart : todayStr;
       }
       const customBox = document.getElementById('customPlanInputBox');
       if (customBox) {
         customBox.style.display = tempSelectedPlanMode === 'custom' ? 'block' : 'none';
       }
+
+      const hint = document.getElementById('customDeadlineHint');
+      if (hint) {
+        if (state.plan && state.plan.customDeadline) {
+          onCustomDeadlineChange();
+        } else {
+          hint.textContent = '💡 可直接指定每日背词数，或选择考研倒计时截止日自动推算。';
+        }
+      }
+
       renderPlanOptionsList();
       modal.style.display = 'flex';
     }
@@ -6537,13 +6560,18 @@
       if (!startDateInput.value) {
         startDateInput.value = getLocalDateString();
       }
+      const todayStr = getLocalDateString();
       const deadlineInput = document.getElementById('customDeadlineInput');
-      if (deadlineInput && deadlineInput.value) {
-        onCustomDeadlineChange();
-      } else {
-        renderPlanOptionsList();
-        updatePlanModalFooter();
+      if (deadlineInput) {
+        const curStart = startDateInput.value;
+        deadlineInput.min = curStart > todayStr ? curStart : todayStr;
+        if (deadlineInput.value) {
+          onCustomDeadlineChange();
+          return;
+        }
       }
+      renderPlanOptionsList();
+      updatePlanModalFooter();
     }
 
     function onCustomTargetChange() {
@@ -6573,14 +6601,15 @@
       const today = new Date(getLocalDateString() + 'T00:00:00');
       const startStr = (startDateInput && startDateInput.value) ? startDateInput.value : ((state.plan && state.plan.startDate) || getLocalDateString());
       const startDate = new Date(startStr + 'T00:00:00');
-      const baseDate = startDate > today ? startDate : today;
+      const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
       const targetDate = new Date(deadlineVal + 'T00:00:00');
       const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
       const unmastered = ALL_CARDS.filter(c => !state.masteredIds.has(c.id)).length;
 
-      if (diffDays <= 0) {
+      if (isNaN(diffDays) || diffDays <= 0) {
         if (hint) hint.innerHTML = '⚠️ <span style="color:#ef4444;">截止日期必须晚于计划开始日期与今天，已恢复默认定量。</span>';
         deadlineInput.value = '';
+        targetInput.value = (state.plan && state.plan.customDailyTarget) || 50;
       } else {
         const calculatedTarget = Math.max(Math.ceil(unmastered / diffDays), 1);
         targetInput.value = calculatedTarget;
@@ -6629,7 +6658,7 @@
         } else {
           const today = new Date(todayStr + 'T00:00:00');
           const startDate = new Date(tempStartDate + 'T00:00:00');
-          const baseDate = startDate > today ? startDate : today;
+          const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
 
           let finishDate;
           let days;
@@ -6688,7 +6717,7 @@
         } else {
           const today = new Date(todayStr + 'T00:00:00');
           const startDate = new Date(tempStartDate + 'T00:00:00');
-          const baseDate = startDate > today ? startDate : today;
+          const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
 
           let finishDate;
           if (tempSelectedPlanMode === 'custom') {

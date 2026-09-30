@@ -11,6 +11,10 @@ const assert = require('assert');
 
 console.log('=== Running Plan, Quota, Breakpoint & Advancement Verification Suite ===\n');
 
+// Load project version metadata
+const verJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8'));
+const currentVersion = verJson.version;
+
 // 1. Verify HTML Files & DOM Elements
 const htmlFiles = ['index.html', '考研英语刷题卡.html'];
 for (const file of htmlFiles) {
@@ -46,8 +50,8 @@ for (const file of htmlFiles) {
   assert(content.includes('saveSelectedPlan'), `${file} missing saveSelectedPlan trigger`);
 
   // Verify Version Alignment
-  assert(content.includes("const APP_VERSION = '1.2.1';"), `${file} APP_VERSION != 1.2.1`);
-  assert(content.includes("题库版本：v1.2.1"), `${file} version display != v1.2.1`);
+  assert(content.includes(`const APP_VERSION = '${currentVersion}';`), `${file} APP_VERSION != ${currentVersion}`);
+  assert(content.includes(`题库版本：v${currentVersion}`), `${file} version display != v${currentVersion}`);
 
   console.log(`✓ 1. DOM Architecture & UI Elements verified in ${file}`);
 }
@@ -66,6 +70,7 @@ function isFuturePlanStartDate(state, todayStr = '2026-09-29') {
   if (!state.plan || !state.plan.startDate) return false;
   const today = new Date(todayStr + 'T00:00:00');
   const start = new Date(state.plan.startDate + 'T00:00:00');
+  if (isNaN(start.getTime()) || isNaN(today.getTime())) return false;
   return start.getTime() > today.getTime();
 }
 
@@ -73,7 +78,8 @@ function getDaysUntilPlanStart(state, todayStr = '2026-09-29') {
   if (!state.plan || !state.plan.startDate) return 0;
   const today = new Date(todayStr + 'T00:00:00');
   const start = new Date(state.plan.startDate + 'T00:00:00');
-  return Math.ceil((start.getTime() - today.getTime()) / 86400000);
+  if (isNaN(start.getTime()) || isNaN(today.getTime())) return 0;
+  return Math.max(Math.ceil((start.getTime() - today.getTime()) / 86400000), 0);
 }
 
 function getDailyTarget(state, allCards, todayStr = '2026-09-29') {
@@ -89,12 +95,14 @@ function getDailyTarget(state, allCards, todayStr = '2026-09-29') {
       const today = new Date(todayStr + 'T00:00:00');
       const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : todayStr;
       const startDate = new Date(startStr + 'T00:00:00');
-      const baseDate = startDate > today ? startDate : today;
+      const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
       const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-      const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
-      if (diffDays > 0) {
-        const unmastered = allCards.filter(c => !state.masteredIds.has(c.id)).length;
-        return Math.max(Math.ceil(unmastered / diffDays), 1);
+      if (!isNaN(targetDate.getTime())) {
+        const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
+        if (diffDays > 0) {
+          const unmastered = allCards.filter(c => !state.masteredIds.has(c.id)).length;
+          return Math.max(Math.ceil(unmastered / diffDays), 1);
+        }
       }
     }
     return Math.max(parseInt(state.plan.customDailyTarget, 10) || 50, 1);
@@ -110,16 +118,18 @@ function getETDInfo(state, allCards, todayStr = '2026-09-29') {
   const today = new Date(todayStr + 'T00:00:00');
   const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : todayStr;
   const startDate = new Date(startStr + 'T00:00:00');
-  const baseDate = startDate > today ? startDate : today;
+  const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
 
   if (state.plan && state.plan.mode === 'custom' && state.plan.customDeadline) {
     const targetDate = new Date(state.plan.customDeadline + 'T00:00:00');
-    const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
-    if (diffDays > 0) {
-      const finishDate = targetDate;
-      const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
-      const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-      return { unmastered, daysRemaining, etdStr };
+    if (!isNaN(targetDate.getTime())) {
+      const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
+      if (diffDays > 0) {
+        const finishDate = targetDate;
+        const etdStr = `${finishDate.getMonth() + 1}月${finishDate.getDate()}日`;
+        const daysRemaining = Math.ceil((finishDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+        return { unmastered, daysRemaining, etdStr };
+      }
     }
   }
   const dailyTarget = getDailyTarget(state, allCards, todayStr);
@@ -190,6 +200,58 @@ assert.strictEqual(etd.etdStr, '10月9日');
 simState.plan.customDeadline = '2026-09-28'; // in the past
 assert.strictEqual(getDailyTarget(simState, mockCards, '2026-09-29'), 100, "Must fall back to customDailyTarget");
 
+// Regression Unit Test: simulate onCustomDeadlineChange handling of invalid dates, past dates, and restoration
+function simulateOnCustomDeadlineChange(deadlineVal, state, allCards, todayStr = '2026-09-29') {
+  if (!deadlineVal) {
+    return { deadlineVal: '', targetVal: (state.plan && state.plan.customDailyTarget) || 50, isError: false };
+  }
+  const today = new Date(todayStr + 'T00:00:00');
+  const startStr = (state.plan && state.plan.startDate) ? state.plan.startDate : todayStr;
+  const startDate = new Date(startStr + 'T00:00:00');
+  const baseDate = (!isNaN(startDate.getTime()) && startDate > today) ? startDate : today;
+  const targetDate = new Date(deadlineVal + 'T00:00:00');
+  const diffDays = Math.ceil((targetDate.getTime() - baseDate.getTime()) / (1000 * 3600 * 24));
+  const unmastered = allCards.filter(c => !state.masteredIds.has(c.id)).length;
+
+  if (isNaN(diffDays) || diffDays <= 0) {
+    return {
+      deadlineVal: '',
+      targetVal: (state.plan && state.plan.customDailyTarget) || 50,
+      isError: true
+    };
+  } else {
+    const calculatedTarget = Math.max(Math.ceil(unmastered / diffDays), 1);
+    return {
+      deadlineVal: deadlineVal,
+      targetVal: calculatedTarget,
+      isError: false
+    };
+  }
+}
+
+// 1. Invalid date input string
+let badDateRes = simulateOnCustomDeadlineChange('not-a-date', simState, mockCards, '2026-09-29');
+assert.strictEqual(badDateRes.isError, true, "Must flag error on invalid date string");
+assert.strictEqual(badDateRes.deadlineVal, '', "Must clear invalid deadline");
+assert.strictEqual(badDateRes.targetVal, 100, "Must restore default customDailyTarget without NaN");
+assert(!isNaN(badDateRes.targetVal), "Must never produce NaN target");
+
+// 2. Past date (yesterday: 2026-09-28)
+let pastDeadlineRes = simulateOnCustomDeadlineChange('2026-09-28', simState, mockCards, '2026-09-29');
+assert.strictEqual(pastDeadlineRes.isError, true, "Must flag error on past date");
+assert.strictEqual(pastDeadlineRes.deadlineVal, '', "Must clear past deadline");
+assert.strictEqual(pastDeadlineRes.targetVal, 100, "Must restore default target");
+
+// 3. Same as base date (today: 2026-09-29)
+let sameDateRes = simulateOnCustomDeadlineChange('2026-09-29', simState, mockCards, '2026-09-29');
+assert.strictEqual(sameDateRes.isError, true, "Deadline equal to today/baseDate is invalid");
+
+// 4. Valid future deadline
+let validDeadlineRes = simulateOnCustomDeadlineChange('2026-10-09', simState, mockCards, '2026-09-29');
+assert.strictEqual(validDeadlineRes.isError, false);
+assert.strictEqual(validDeadlineRes.deadlineVal, '2026-10-09');
+assert.strictEqual(validDeadlineRes.targetVal, 40);
+
 // --- 2b. Testing Custom Plan Start Date: Future, Today, and Past dates ---
 console.log('\n--- 2b. Testing Custom Plan Start Date Dynamics (Future, Today, Past) ---');
 
@@ -233,6 +295,22 @@ etd = getETDInfo(simState, mockCards, '2026-09-29');
 assert.strictEqual(etd.daysRemaining, 7);
 assert.strictEqual(etd.etdStr, '10月6日');
 
+// Case E: Malformed / Invalid Date Robustness
+assert.strictEqual(isFuturePlanStartDate({ plan: { startDate: 'invalid-date' } }), false, "Invalid date must not crash");
+assert.strictEqual(getDaysUntilPlanStart({ plan: { startDate: 'invalid-date' } }), 0, "Invalid date must return 0");
+
+// Case F: Cross-year boundary (2026-12-25 to 2027-01-15: 21 days)
+let yearRolloverState = {
+  activeYear: 2010,
+  masteredIds: new Set(),
+  plan: { mode: 'custom', customDailyTarget: 50, customDeadline: '2027-01-15', startDate: '2026-12-25' }
+};
+const rolloverTarget = getDailyTarget(yearRolloverState, mockCards, '2026-12-25');
+assert.strictEqual(rolloverTarget, Math.ceil(397 / 21), "Year rollover target properly computed");
+let rolloverETD = getETDInfo(yearRolloverState, mockCards, '2026-12-25');
+assert.strictEqual(rolloverETD.daysRemaining, 21);
+assert.strictEqual(rolloverETD.etdStr, '1月15日');
+
 // Test 100% mastered completion ETD
 mockCards.forEach(c => simState.masteredIds.add(c.id));
 etd = getETDInfo(simState, mockCards);
@@ -257,8 +335,19 @@ function formatHeaderPlanPill(state, allCards, todayStr = '2026-09-29') {
   const streak = state.daily ? state.daily.streakDays : 1;
   const { unmastered, etdStr } = getETDInfo(state, allCards, todayStr);
 
-  const etdPart = unmastered === 0 ? '预计 已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
-  return `🎯 今日计划: ${todayCount} / ${target} 词 | 🔥 连续打卡 ${streak} 天 | ${etdPart}`;
+  const etdPart = unmastered === 0 ? '已全量通关 🎉' : `预计 ${etdStr} 全量通关`;
+  let daysInfo = `连续打卡 ${streak} 天`;
+  let startDayText = '';
+  if (state.plan && state.plan.startDate) {
+    const startObj = new Date(state.plan.startDate + 'T00:00:00');
+    const todayObj = new Date(todayStr + 'T00:00:00');
+    if (!isNaN(startObj.getTime()) && !isNaN(todayObj.getTime())) {
+      const daysSinceStart = Math.max(Math.floor((todayObj.getTime() - startObj.getTime()) / 86400000) + 1, 1);
+      startDayText = `启动第 ${daysSinceStart} 天 · `;
+      daysInfo = `已启动第 ${daysSinceStart} 天 · 连续打卡 ${streak} 天`;
+    }
+  }
+  return `🎯 今日计划: ${todayCount} / ${target} 词 | ${startDayText}🔥 连续打卡 ${streak} 天 | ${etdPart}`;
 }
 
 function simulateDayTransition(state, newDateStr) {
@@ -355,7 +444,9 @@ assert.strictEqual(futureStudyState.daily.goalCelebrated, false);
 simulateDayTransition(futureStudyState, '2026-10-01');
 assert.strictEqual(isFuturePlanStartDate(futureStudyState, '2026-10-01'), false, "Plan is now active!");
 let arrivedPill = formatHeaderPlanPill(futureStudyState, mockCards, '2026-10-01');
-assert(arrivedPill.startsWith('🎯 今日计划: 0 / 60 词 | 🔥 连续打卡 1 天'));
+// Displays days since start (启动第 1 天) AND streak (🔥 连续打卡 1 天)
+assert(arrivedPill.startsWith('🎯 今日计划: 0 / 60 词 | 启动第 1 天 · 🔥 连续打卡 1 天'));
+assert.strictEqual(arrivedPill, '🎯 今日计划: 0 / 60 词 | 启动第 1 天 · 🔥 连续打卡 1 天 | 预计 10月8日 全量通关');
 
 // Now study 60 cards on arrival date: Daily quota celebration kicks off!
 celebrationCalled = false;
@@ -382,7 +473,7 @@ let studyState = {
 };
 
 let pillText = formatHeaderPlanPill(studyState, mockCards, '2026-09-29');
-assert(pillText.startsWith('🎯 今日计划: 0 / 60 词 | 🔥 连续打卡 1 天 | 预计'));
+assert(pillText.startsWith('🎯 今日计划: 0 / 60 词 | 启动第 1 天 · 🔥 连续打卡 1 天 | 预计'));
 
 // Study 59 cards: quota not yet reached
 let celebrationTriggered = false;
@@ -409,6 +500,7 @@ assert.strictEqual(celebrationTriggered, false); // No redundant popup!
 
 pillText = formatHeaderPlanPill(studyState, mockCards, '2026-09-29');
 assert(pillText.includes('61 / 60 词'));
+assert(pillText.includes('启动第 1 天 · 🔥 连续打卡 1 天'));
 
 // Transition to Day 2 (2026-09-30): consecutive day
 simulateDayTransition(studyState, '2026-09-30');
@@ -418,7 +510,7 @@ assert.strictEqual(studyState.daily.streakDays, 1, "streakDays must be preserved
 assert.strictEqual(studyState.daily.goalCelebrated, false, "goalCelebrated must reset for new date");
 
 pillText = formatHeaderPlanPill(studyState, mockCards, '2026-09-30');
-assert(pillText.startsWith('🎯 今日计划: 0 / 60 词 | 🔥 连续打卡 1 天'));
+assert(pillText.startsWith('🎯 今日计划: 0 / 60 词 | 启动第 2 天 · 🔥 连续打卡 1 天'));
 
 // Complete Day 2 quota: streak should increment from 1 to 2!
 celebrationTriggered = false;
@@ -431,6 +523,9 @@ assert.strictEqual(studyState.daily.streakDays, 2, "streakDays must increment to
 // Transition to Day 3 (2026-10-01): consecutive day
 simulateDayTransition(studyState, '2026-10-01');
 assert.strictEqual(studyState.daily.streakDays, 2, "streakDays preserved at 2");
+
+pillText = formatHeaderPlanPill(studyState, mockCards, '2026-10-01');
+assert(pillText.includes('启动第 3 天 · 🔥 连续打卡 2 天'));
 
 // Complete Day 3 quota: streak increments to 3
 for (let i = 0; i < 60; i++) {
@@ -451,6 +546,9 @@ assert.strictEqual(studyState.daily.lastCheckinDate, '2026-10-01', "Checkin date
 simulateDayTransition(studyState, '2026-10-03');
 // Because Day 4 was NOT checked in, streak is broken!
 assert.strictEqual(studyState.daily.streakDays, 1, "streakDays must reset to 1 because Day 4 check-in was missed");
+// But plan elapsed days continues: 2026-09-29 to 2026-10-03 = 5th day!
+pillText = formatHeaderPlanPill(studyState, mockCards, '2026-10-03');
+assert(pillText.includes('启动第 5 天 · 🔥 连续打卡 1 天'), "Pill must show Day 5 of plan even though streak reset to 1");
 
 // Complete Day 5:
 for (let i = 0; i < 60; i++) {
@@ -469,6 +567,38 @@ simulateDayTransition(freshState, '2026-10-08');
 assert.strictEqual(freshState.daily.date, '2026-10-08');
 assert.strictEqual(freshState.daily.streakDays, 1);
 assert(!isNaN(freshState.daily.streakDays), "Must not produce NaN");
+
+// Test Past Start Date Header Pill display (e.g., plan started on 2026-09-19, today is 2026-09-29 = Day 11)
+let pastPillState = {
+  activeYear: 2010,
+  masteredIds: new Set(),
+  plan: { mode: 'intensive', customDailyTarget: 50, customDeadline: '', startDate: '2026-09-19' },
+  daily: { date: '2026-09-29', todayLearnedIds: [], streakDays: 1 }
+};
+let pastPill = formatHeaderPlanPill(pastPillState, mockCards, '2026-09-29');
+assert(pastPill.includes('启动第 11 天 · 🔥 连续打卡 1 天'), "Past start date must compute days elapsed");
+
+// Test Header Pill without startDate set (empty string)
+let emptyStartPillState = {
+  activeYear: 2010,
+  masteredIds: new Set(),
+  plan: { mode: 'intensive', customDailyTarget: 50, customDeadline: '', startDate: '' },
+  daily: { date: '2026-09-29', todayLearnedIds: [], streakDays: 1 }
+};
+let emptyStartPill = formatHeaderPlanPill(emptyStartPillState, mockCards, '2026-09-29');
+assert(emptyStartPill.includes('| 🔥 连续打卡 1 天 |'));
+assert(!emptyStartPill.includes('启动第'), "No start date should omit 启动第 N 天");
+
+// Test Header Pill when 100% mastered
+let completedPillState = {
+  activeYear: 2010,
+  masteredIds: new Set(mockCards.map(c => c.id)),
+  plan: { mode: 'intensive', customDailyTarget: 50, customDeadline: '', startDate: '2026-09-29' },
+  daily: { date: '2026-09-29', todayLearnedIds: [], streakDays: 1 }
+};
+let completedPill = formatHeaderPlanPill(completedPillState, mockCards, '2026-09-29');
+assert(completedPill.endsWith('| 已全量通关 🎉'), "Must cleanly end with 已全量通关 🎉");
+assert(!completedPill.includes('预计 已全量通关'), "Must NOT contain redundant '预计'");
 
 console.log('✓ 3. Daily quota accumulation, celebration trigger, consecutive streak preservation, and missed-day streak reset verified.');
 
@@ -599,13 +729,12 @@ console.log('✓ 4. Breakpoint protection, midway plan switching, and automatic 
 
 // 5. Check version.json and sw.js
 console.log('\n--- 5. Testing Version Alignment across all project files ---');
-const verJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'version.json'), 'utf8'));
-assert.strictEqual(verJson.version, '1.2.1', 'version.json version mismatch');
+assert.strictEqual(verJson.version, currentVersion, 'version.json version mismatch');
 
 const swContent = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8');
-assert(swContent.includes("const CACHE_VERSION = 'v1.2.1';"), 'sw.js CACHE_VERSION mismatch');
+assert(swContent.includes(`const CACHE_VERSION = 'v${currentVersion}';`), 'sw.js CACHE_VERSION mismatch');
 
-console.log('✓ 5. Version v1.2.1 strictly synchronized across version.json, sw.js, and HTML files.');
+console.log(`✓ 5. Version v${currentVersion} strictly synchronized across version.json, sw.js, and HTML files.`);
 
 console.log('\n===============================================================');
 console.log('🎉 ALL PLAN, QUOTA & BREAKPOINT TESTS PASSED WITH 100% SUCCESS!');
